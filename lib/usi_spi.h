@@ -13,11 +13,11 @@
 #define SPI_SUCCESS 0
 #define SPI_FAIL 1
 
-#define SPI_DATA_READY (spi_buffer_ready == true)
-
 #define SPI_BUFFER_EMPTY (spi_buffer + spi_buffer_offset >= spi_buffer_max)
 
-static volatile uint8_t *spi_buffer = NULL; //Zeiger auf den momentanen Puffer
+#define SPI_DATA_READY (spi_buffer == NULL)
+
+volatile uint8_t *spi_buffer = NULL; //Zeiger auf den momentanen Puffer
 
 static volatile size_t spi_buffer_offset = 0; //Aktueller Ort im Puffer
 
