@@ -15,14 +15,13 @@
 
 #define SPI_DATA_READY (spi_buffer_ready == true)
 
+#define SPI_BUFFER_EMPTY (spi_buffer + spi_buffer_offset >= spi_buffer_max)
+
 static volatile uint8_t *spi_buffer = NULL; //Zeiger auf den momentanen Puffer
 
 static volatile size_t spi_buffer_offset = 0; //Aktueller Ort im Puffer
 
 static volatile uint8_t *spi_buffer_max = NULL; //Zeiger auf das Ende des Puffers
-
-/*Darf nicht von Außen verändert werden!*/
-volatile bool spi_buffer_ready = true; //Puffer kann mit Daten befüllt werden
 
 /*Damit ein leerer Puffer wärend einer Übertragung gefüllt werden kann*/
 static volatile bool spi_buffer_valid = false;
@@ -42,13 +41,12 @@ inline void usi_spi_init() {
 uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
     uint8_t status;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { //Falls mitendrin Übertragung beginnt
-        if(spi_buffer_ready == true) { //Puffer wird nicht genutzt
+        if(spi_buffer == NULL && buffer != NULL && byte_count > 0) { //Puffer frei und Parameter valid
             spi_buffer_max = buffer + byte_count; //Neue Größe des Puffers
             spi_buffer = buffer; //Neue Daten
-            spi_buffer_ready = false;
             status = SPI_SUCCESS;
         } else {
-            status = SPI_FAIL; //Es liegen bereits Daten im Puffer
+            status = SPI_FAIL; //Es liegen bereits Daten im Puffer oder Parameter falsch
         }
     }
     return status;
@@ -58,7 +56,7 @@ ISR(PCINT1_vect) {
     if(PORTB & (1 << PB2)) { //Steigende Flanke, Übertragung beginnt
         USISR |= (1 << USIOIF) | (16 << USICNT0); //USI reset
         USICR |= (1 << USIOIE);
-        if(spi_buffer_ready == false) { //Puffer enthält Daten
+        if(spi_buffer != NULL) { //Puffer enthält Daten
             spi_buffer_valid = true; //Puffer wird versendet
             spi_buffer_offset = 0;
         } else {
@@ -66,14 +64,16 @@ ISR(PCINT1_vect) {
         }
     } else {
         USICR &= ~(1 << USIOIE); //USI abschalten
-        spi_buffer_ready = true;
+        if(spi_buffer_valid == true) { //Puffer enthielt zuvor Daten
+            spi_buffer = NULL; //Puffer wird geleert
+        }
     }
 }
 
 ISR(USI_OVF_vect) {
     USISR |= (1 << USIOIF); //Flag löschen
     uint8_t input = USIDR;
-    if(spi_buffer_valid == true) { //Daten zum versenden bereit
+    if(spi_buffer_valid == true && !SPI_BUFFER_EMPTY) { //Daten zum versenden bereit
         USIDR = *(spi_buffer + spi_buffer_offset);
         *(spi_buffer + spi_buffer_offset) = input; //Replace old data with new input data
         spi_buffer_offset++;
