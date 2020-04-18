@@ -32,16 +32,15 @@ inline void rpm_init() {
 
 void rpm_enable() {
     PORTA |= (1 << PA0); //DDrx anpassen!
+    power_adc_enable();
     ACSR &= ~(1 << ACD);
     ACSR |= (1 << ACIE);
-    power_timer1_enable();
-    power_adc_enable();
 }
 
 void rpm_disable() {
     ACSR &= ~(1 << ACIE);
-    TCCR1B &= ~((1 << CS11) | (1 << CS10)); //Timer stoppen
     TIMSK1 &= ~(1 << ICIE1); //Interrupt deaktivieren
+    TCCR1B &= ~((1 << CS11) | (1 << CS10)); //Timer stoppen
     power_timer1_disable();
     ACSR |= (1 << ACD);
     power_adc_disable();
@@ -67,7 +66,7 @@ ISR(TIM1_CAPT_vect) {
 
 ISR(TIM1_OVF_vect) {
     TIMSK1 &= ~(1 << ICIE1); //Interrupt deaktivieren
-    capture_value = 0xFFFF;
     TCCR1B &= ~((1 << CS11) | (1 << CS10)); //Timer stoppen
+    capture_value = 0xFFFF;
     power_timer1_disable();
 }
