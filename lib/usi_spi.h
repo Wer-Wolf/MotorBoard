@@ -13,13 +13,23 @@
 #define SPI_SUCCESS 0
 #define SPI_FAIL 1
 
-#define SPI_BUFFER_EMPTY (spi_buffer + spi_buffer_offset >= spi_buffer_max)
+#define MISO PA5
+#define MOSI PA6
+#define SCK PA4
+#define SS PB2
+
+#define SPI_BUFFER_AVAILABLE (spi_buffer + spi_buffer_offset <= spi_buffer_max) //Daten können geschrieben/gelesen werden
+
+#define SPI_CURRENT_ITEM *(spi_buffer + spi_buffer_offset)
 
 #define SPI_DATA_READY (spi_buffer == NULL)
 
+//WIP
+#define SPI_BUFFER_ITEMS (spi_buffer_offset - 1) //Nur valid nach einer Übertragung und wenn SPI_DATA_READY
+
 volatile uint8_t *spi_buffer = NULL; //Zeiger auf den momentanen Puffer
 
-static volatile size_t spi_buffer_offset = 0; //Aktueller Ort im Puffer
+volatile size_t spi_buffer_offset = 0; //Aktueller Ort im Puffer
 
 static volatile uint8_t *spi_buffer_max = NULL; //Zeiger auf das Ende des Puffers
 
@@ -33,16 +43,15 @@ inline void usi_spi_init() {
     #else //Mode 1
     USICR |= (1 << USIWM0) | (1 << USICS1) | (1 << USICS0);
     #endif
-    //Pinchange auf PB2 (PCINT10)
-    PCMSK1 |= (1 << PCINT10);
-    GIMSK |= (1 << PCIE1);
+    MCUCR |= (1 << ISC00);
+    GIMSK |= (1 << INT0);
 }
 
 uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
     uint8_t status;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { //Falls mitendrin Übertragung beginnt
-        if(spi_buffer == NULL && buffer != NULL && byte_count > 0) { //Puffer frei und Parameter valid
-            spi_buffer_max = buffer + byte_count; //Neue Größe des Puffers
+        if(SPI_DATA_READY && buffer != NULL && byte_count > 0) { //Puffer frei und Parameter valid
+            spi_buffer_max = buffer + byte_count - 1; //Neue Größe des Puffers
             spi_buffer = buffer; //Neue Daten
             status = SPI_SUCCESS;
         } else {
@@ -52,32 +61,44 @@ uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
     return status;
 }
 
-ISR(PCINT1_vect) {
-    if(PORTB & (1 << PB2)) { //Steigende Flanke, Übertragung beginnt
-        USISR |= (1 << USIOIF) | (16 << USICNT0); //USI reset
-        USICR |= (1 << USIOIE);
-        if(spi_buffer != NULL) { //Puffer enthält Daten
-            spi_buffer_valid = true; //Puffer wird versendet
-            spi_buffer_offset = 0;
-        } else {
-            spi_buffer_valid = false; //Puffer wird ignoriert (weil enthält keine Daten)
-        }
-    } else {
+ISR(INT0_vect) {
+    if(PINB & (1 << PINB2)) { //Steigende Flanke, Übertragung endet
+        PORTA |= (1 << PA7);
         USICR &= ~(1 << USIOIE); //USI abschalten
+        USISR = (1 << USIOIF);
         if(spi_buffer_valid == true) { //Puffer enthielt zuvor Daten
             spi_buffer = NULL; //Puffer wird geleert
         }
+    } else {
+        PORTA &= ~(1 << PA7);
+        USISR = (1 << USIOIF); //USI reset
+        if(spi_buffer != NULL) { //Puffer enthält Daten
+            spi_buffer_valid = true; //Puffer wird versendet
+            spi_buffer_offset = 0;
+            USIDR = SPI_CURRENT_ITEM; //Muss vorgeladen werden
+        } else {
+            spi_buffer_valid = false; //Puffer wird ignoriert (weil enthält keine Daten)
+        }
+        USICR |= (1 << USIOIE); //USI starten
     }
 }
 
 ISR(USI_OVF_vect) {
-    USISR |= (1 << USIOIF); //Flag löschen
+    USISR = (1 << USIOIF); //Flag löschen
     uint8_t input = USIDR;
-    if(spi_buffer_valid == true && !SPI_BUFFER_EMPTY) { //Daten zum versenden bereit
-        USIDR = *(spi_buffer + spi_buffer_offset);
-        *(spi_buffer + spi_buffer_offset) = input; //Replace old data with new input data
-        spi_buffer_offset++;
+    if(spi_buffer_valid == true) { //Puffer erreichbar
+        if(SPI_BUFFER_AVAILABLE) { //Daten passen in Puffer
+            SPI_CURRENT_ITEM = input; //Puffer updaten
+            spi_buffer_offset++;
+            if(SPI_BUFFER_AVAILABLE) { //Puffer ist nicht leer
+                USIDR = SPI_CURRENT_ITEM;
+            } else {
+                USIDR = 'N'; //No Data
+            }
+        } else {
+            USIDR = 'F'; //Buffer full
+        }
     } else {
-        USIDR = 0;
+        USIDR = 'I'; //Invalid
     }
 }
