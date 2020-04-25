@@ -6,10 +6,6 @@
 #include <avr/power.h> //Vlt.?
 #include <util/atomic.h> //C99
 
-#ifndef USI_SPI_MODE
-    #define USI_SPI_MODE 0 //Standard
-#endif
-
 #define SPI_SUCCESS 0
 #define SPI_FAIL 1
 
@@ -38,13 +34,11 @@ static volatile bool spi_buffer_valid = false;
 
 inline void usi_spi_init() {
     //USI Overflow (DDRx anpassen)
-    #if USI_SPI_MODE == 0
-    USICR |= (1 << USIWM0) | (1 << USICS1);
-    #else //Mode 1
-    USICR |= (1 << USIWM0) | (1 << USICS1) | (1 << USICS0);
-    #endif
-    MCUCR |= (1 << ISC00);
+    USICR = (1 << USIWM0) | (1 << USICS1) | (SPI_MODE << USICS0);
+    MCUCR |= (1 << ISC01); //Reagiert bei fallender Flanke
     GIMSK |= (1 << INT0);
+    PORTA |= (1 << SCK); //Pullup
+    PORTB |= (1 << SS); //Pullup
 }
 
 uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
@@ -62,14 +56,22 @@ uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
 }
 
 ISR(INT0_vect) {
-    if(PINB & (1 << PINB2)) { //Steigende Flanke, Übertragung endet
+    if(MCUCR & (1 << ISC00)) { //Steigende Flanke, Ende der Übertragung
+        DDRA &= ~(1 << MISO);
+        PORTA &= ~(1 << MOSI); //Pullup entfernen
+        MCUCR &= ~(1 << ISC00); //Reagiert auf Anfang einer Übertragung
+        GIFR = (1 << INTF0);
         PORTA |= (1 << PA7);
         USICR &= ~(1 << USIOIE); //USI abschalten
-        USISR = (1 << USIOIF);
+        //USISR = (1 << USIOIF);
         if(spi_buffer_valid == true) { //Puffer enthielt zuvor Daten
             spi_buffer = NULL; //Puffer wird geleert
         }
     } else {
+        DDRA |= (1 << MISO);
+        PORTA |= (1 << MOSI);
+        MCUCR |= (1 << ISC00); //Reagiert auf Ende der Übertragung
+        GIFR |= (1 << INTF0);
         PORTA &= ~(1 << PA7);
         USISR = (1 << USIOIF); //USI reset
         if(spi_buffer != NULL) { //Puffer enthält Daten
@@ -79,7 +81,7 @@ ISR(INT0_vect) {
         } else {
             spi_buffer_valid = false; //Puffer wird ignoriert (weil enthält keine Daten)
         }
-        USICR |= (1 << USIOIE); //USI starten
+        USICR = (1 << USIOIE); //USI starten
     }
 }
 
