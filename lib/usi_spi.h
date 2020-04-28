@@ -23,6 +23,12 @@
 //WIP
 #define SPI_BUFFER_ITEMS (spi_buffer_offset - 1) //Nur valid nach einer Übertragung und wenn SPI_DATA_READY
 
+#define USICR_DEFAULT ((1 << USIWM0) | (1 << USICS1) | (SPI_MODE << USICS0))
+
+#define FALLING_EDGE (1 << ISC01)
+
+#define RISING_EDGE ((1 << ISC01) | (1 << ISC00))
+
 volatile uint8_t *spi_buffer = NULL; //Zeiger auf den momentanen Puffer
 
 volatile size_t spi_buffer_offset = 0; //Aktueller Ort im Puffer
@@ -34,11 +40,11 @@ static volatile bool spi_buffer_valid = false;
 
 inline void usi_spi_init() {
     //USI Overflow (DDRx anpassen)
-    USICR = (1 << USIWM0) | (1 << USICS1) | (SPI_MODE << USICS0);
-    MCUCR |= (1 << ISC01); //Reagiert bei fallender Flanke
-    GIMSK |= (1 << INT0);
     PORTA |= (1 << SCK); //Pullup
     PORTB |= (1 << SS); //Pullup
+    USICR = USICR_DEFAULT;
+    MCUCR = FALLING_EDGE;
+    GIMSK |= (1 << INT0);
 }
 
 uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
@@ -55,14 +61,14 @@ uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
     return status;
 }
 
-ISR(INT0_vect) {
+ISR(EXT_INT0_vect) {
     if(MCUCR & (1 << ISC00)) { //Steigende Flanke, Ende der Übertragung
         DDRA &= ~(1 << MISO);
         PORTA &= ~(1 << MOSI); //Pullup entfernen
-        MCUCR &= ~(1 << ISC00); //Reagiert auf Anfang einer Übertragung
+        MCUCR = FALLING_EDGE; //Reagiert auf Anfang einer Übertragung
         GIFR = (1 << INTF0);
-        PORTA |= (1 << PA7);
-        USICR &= ~(1 << USIOIE); //USI abschalten
+        PORTA |= (1 << PA7); //Debug
+        USICR = USICR_DEFAULT; //USI abschalten
         //USISR = (1 << USIOIF);
         if(spi_buffer_valid == true) { //Puffer enthielt zuvor Daten
             spi_buffer = NULL; //Puffer wird geleert
@@ -70,9 +76,9 @@ ISR(INT0_vect) {
     } else {
         DDRA |= (1 << MISO);
         PORTA |= (1 << MOSI);
-        MCUCR |= (1 << ISC00); //Reagiert auf Ende der Übertragung
+        MCUCR = RISING_EDGE; //Reagiert auf Ende der Übertragung
         GIFR |= (1 << INTF0);
-        PORTA &= ~(1 << PA7);
+        PORTA &= ~(1 << PA7); //Debug
         USISR = (1 << USIOIF); //USI reset
         if(spi_buffer != NULL) { //Puffer enthält Daten
             spi_buffer_valid = true; //Puffer wird versendet
@@ -81,7 +87,7 @@ ISR(INT0_vect) {
         } else {
             spi_buffer_valid = false; //Puffer wird ignoriert (weil enthält keine Daten)
         }
-        USICR = (1 << USIOIE); //USI starten
+        USICR = USICR_DEFAULT | (1 << USIOIE); //USI starten
     }
 }
 
