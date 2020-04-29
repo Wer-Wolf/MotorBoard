@@ -20,16 +20,13 @@
 
 #define SPI_DATA_READY (spi_buffer == NULL)
 
-//WIP
-#define SPI_BUFFER_ITEMS (spi_buffer_offset - 1) //Nur valid nach einer Übertragung und wenn SPI_DATA_READY
-
 #define USICR_DEFAULT ((1 << USIWM0) | (1 << USICS1) | (SPI_MODE << USICS0))
 
 #define FALLING_EDGE (1 << ISC01)
 
 #define RISING_EDGE ((1 << ISC01) | (1 << ISC00))
 
-volatile uint8_t *spi_buffer = NULL; //Zeiger auf den momentanen Puffer
+volatile uint8_t *volatile spi_buffer = NULL; //Zeiger auf den momentanen Puffer (Zeiger muss volatil sein!)
 
 volatile size_t spi_buffer_offset = 0; //Aktueller Ort im Puffer
 
@@ -37,6 +34,8 @@ static volatile uint8_t *spi_buffer_max = NULL; //Zeiger auf das Ende des Puffer
 
 /*Damit ein leerer Puffer wärend einer Übertragung gefüllt werden kann*/
 static volatile bool spi_buffer_valid = false;
+
+volatile size_t spi_buffer_items = 0; //Zeigt nach einer Übertragung Füllstand des Puffers
 
 inline void usi_spi_init() {
     //USI Overflow (DDRx anpassen)
@@ -72,12 +71,13 @@ ISR(EXT_INT0_vect) {
         //USISR = (1 << USIOIF);
         if(spi_buffer_valid == true) { //Puffer enthielt zuvor Daten
             spi_buffer = NULL; //Puffer wird geleert
+            spi_buffer_items = spi_buffer_offset - 1;
         }
     } else {
         DDRA |= (1 << MISO);
         PORTA |= (1 << MOSI);
         MCUCR = RISING_EDGE; //Reagiert auf Ende der Übertragung
-        GIFR |= (1 << INTF0);
+        GIFR = (1 << INTF0);
         PORTA &= ~(1 << PA7); //Debug
         USISR = (1 << USIOIF); //USI reset
         if(spi_buffer != NULL) { //Puffer enthält Daten
@@ -86,6 +86,7 @@ ISR(EXT_INT0_vect) {
             USIDR = SPI_CURRENT_ITEM; //Muss vorgeladen werden
         } else {
             spi_buffer_valid = false; //Puffer wird ignoriert (weil enthält keine Daten)
+            USIDR = 'I'; //Invalid Data
         }
         USICR = USICR_DEFAULT | (1 << USIOIE); //USI starten
     }
@@ -107,6 +108,6 @@ ISR(USI_OVF_vect) {
             USIDR = 'F'; //Buffer full
         }
     } else {
-        USIDR = 'I'; //Invalid
+        USIDR = 'I'; //Invalid Data
     }
 }
