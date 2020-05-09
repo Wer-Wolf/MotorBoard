@@ -46,7 +46,7 @@ inline void usi_spi_init() {
     GIMSK |= (1 << INT0);
 }
 
-uint8_t spi_allow_transmission(uint8_t *buffer ,size_t byte_count) {
+uint8_t spi_allow_transmission(volatile uint8_t *buffer ,size_t byte_count) {
     uint8_t status;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { //Falls mitendrin Übertragung beginnt
         if(SPI_DATA_READY && buffer != NULL && byte_count > 0) { //Puffer frei und Parameter valid
