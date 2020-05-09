@@ -1,4 +1,3 @@
-#include <string.h>
 #include <stdbool.h>
 
 #include <avr/io.h>
@@ -20,24 +19,44 @@ FUSES =
 #include "../lib/rpm.h"
 #include "../lib/motor.h"
 
-#define COMMAND_SIZE 4
+typedef void (*callback_t) (volatile uint8_t *);
 
-#define COMMAND_TEST "TEST"
+#define COMMAND_LENGTH 2 //Rest sind Argumente
+
+typedef struct {
+    callback_t callback;
+    uint8_t string[COMMAND_LENGTH];
+} command_list_t;
 
 typedef union {
     uint32_t frequency; //4 Bytes
     uint8_t command[4];
 } buffer;
 
-buffer command_buffer = {.command[0] = 'E', .command[1] = 'C', .command[2] = 'H', .command[3] = 'O'};
+volatile buffer command_buffer = {0};
 
-inline void sleep() {
-    sleep_enable();
-    NONATOMIC_BLOCK(NONATOMIC_RESTORESTATE) {
-        sleep_cpu();
+uint8_t compare(volatile uint8_t *src, const uint8_t *data, const uint8_t count) {
+    uint8_t status = 0;
+    for(uint8_t i = 0; i < count; i++) {
+        if(*(src + i) != *(data +i)) {
+            status = 1;
+            break;
+        }
     }
-    sleep_disable();
+    return status;
 }
+
+void set(volatile uint8_t *des, const char *string, const uint8_t count) {
+    for(uint8_t i = 0; i < count; i++) {
+        if(*(string + i) != '\0') {
+            *(des + i) = *(string + i);
+        } else {
+            break;
+        }
+    }
+}
+
+#include "../util/commands.h"
 
 int main(void) {
     DDRA |= (1 << SENSOR_ENABLE_PIN) | (1 << L293D_1A) | (1 << L293D_2A);
@@ -48,32 +67,20 @@ int main(void) {
     usi_spi_init();
     sei(); //Für SPI
     while(true) {
-        /*ATOMIC_BLOCK(ATOMIC_FORCEON) {
-            while(!SPI_DATA_READY) {
-                sleep();
-            }
-        }*/
         spi_allow_transmission(&command_buffer.command[0], 4);
         PORTB |= (1 << PB0);
         while(spi_buffer != NULL);
         PORTB &= ~(1 << PB0);
-        /*command_buffer.command[0] = 'E';
-        command_buffer.command[1] = 'C';
-        command_buffer.command[2] = 'H';
-        command_buffer.command[3] = 'O';*/
-        memcpy(&command_buffer.command[0], "ECHO", 4);
-        /*if(memcmp(&command_buffer.command[0], "TEST", 4) == 0) {
-            PORTA |= (1 << PA7);
-            memcpy(&command_buffer.command[0], "ECHO", 4);
-        } else {
-            PORTA &= ~(1 << PA7);
-            memcpy(&command_buffer.command[0], "FAIL", 4);
-        }*/
-        /*ATOMIC_BLOCK(ATOMIC_FORCEON) {
-            while(spi_allow_transmission(command_buffer.command, 4) != SPI_SUCCESS) {
-                sleep(); //Warte bis Übertragung beendet
+        for(uint8_t i = 0; i < COMMAND_COUNT + 1; i++) {
+            if(i == COMMAND_COUNT) { //Kein Befehl wurde erkannt
+                set(&command_buffer.command[0], "????", 4);
+            } else {
+                if(compare(&command_buffer.command[0], &command_list[i].string[0], COMMAND_LENGTH) == 0) {
+                    command_list[i].callback(&command_buffer.command[COMMAND_LENGTH]);
+                    break;
+                }
             }
-        }*/
+        }
     }
     return 0;
 }
