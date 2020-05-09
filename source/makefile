@@ -2,7 +2,7 @@ MCU = attiny84a #avrdude.conf patch needed
 AVR_PROGRAMMER = usbasp
 TARGET = main
 PORT = /dev/ttyS0
-STANDARD = c11
+STANDARD = gnu11
 #ADDITION = -fshort-enums #Important for code-size!
 
 .PHONY: all hex fuse programm clean size
