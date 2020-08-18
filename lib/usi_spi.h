@@ -66,7 +66,7 @@ ISR(EXT_INT0_vect) {
         PORTA &= ~(1 << MOSI); //Pullup entfernen
         MCUCR = FALLING_EDGE; //Reagiert auf Anfang einer Übertragung
         GIFR = (1 << INTF0);
-        PORTA |= (1 << PA7); //Debug
+        //PORTA |= (1 << PA7); //Debug
         USICR = USICR_DEFAULT; //USI abschalten
         //USISR = (1 << USIOIF);
         if(spi_buffer_valid == true) { //Puffer enthielt zuvor Daten
@@ -78,7 +78,7 @@ ISR(EXT_INT0_vect) {
         PORTA |= (1 << MOSI);
         MCUCR = RISING_EDGE; //Reagiert auf Ende der Übertragung
         GIFR = (1 << INTF0);
-        PORTA &= ~(1 << PA7); //Debug
+        //PORTA &= ~(1 << PA7); //Debug
         USISR = (1 << USIOIF); //USI reset
         if(spi_buffer != NULL) { //Puffer enthält Daten
             spi_buffer_valid = true; //Puffer wird versendet
