@@ -19,9 +19,9 @@ FUSES =
 #include "../lib/rpm.h"
 #include "../lib/motor.h"
 
-typedef void (*callback_t) (volatile uint8_t *);
-
 #define COMMAND_LENGTH 2 //Rest sind Argumente
+
+typedef void (*callback_t) (volatile uint8_t *);
 
 typedef struct {
     callback_t callback;
@@ -63,14 +63,14 @@ int main(void) {
     DDRB |= (1 << L293D_3A) | (1 << L293D_4A);
     power_timer0_disable();
     set_sleep_mode(SLEEP_MODE_IDLE);
-    //rpm_init();
+    rpm_init();
     usi_spi_init();
     sei(); //Für SPI
     while(true) {
         spi_allow_transmission(&command_buffer.command[0], 4);
-        PORTB |= (1 << PB0);
+        //PORTB |= (1 << PB0);
         while(spi_buffer != NULL);
-        PORTB &= ~(1 << PB0);
+        //PORTB &= ~(1 << PB0);
         for(uint8_t i = 0; i < COMMAND_COUNT + 1; i++) {
             if(i == COMMAND_COUNT) { //Kein Befehl wurde erkannt
                 set(&command_buffer.command[0], "????", 4);
