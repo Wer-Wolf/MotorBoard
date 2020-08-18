@@ -28,7 +28,7 @@ uint16_t get_capture_value() {
 }
 
 void start_capture() {
-    PORTA |= (1 << PA0); //DDrx anpassen!
+    PORTA |= (1 << SENSOR_ENABLE_PIN); //DDrx anpassen!
     power_adc_enable();
     ACSR = ACSR_DEFAULT & ~(1 << ACD);
     ACSR = ACSR_DEFAULT & ~(1 << ACD) & (1 << ACIE);
@@ -43,7 +43,7 @@ void stop_capture() {
     TCCR1B = TCCR1B_DEFAULT & ~(1 << CS11) & ~(1 << CS10);
     TIFR1 = (1 << TOV1) | (1 << ICF1); //Flags löschen
     power_timer1_disable();
-    PORTA &= ~(1 << PA0);
+    PORTA &= ~(1 << SENSOR_ENABLE_PIN);
 }
 
 inline void rpm_init() {
